@@ -182,7 +182,7 @@ class build_transformer(nn.Module):
     def forward(self, x, label=None, cam_label= None, view_label=None):
         global_feat = self.base(x, cam_label=cam_label, view_label=view_label)
 
-        feat = self.bottleneck(global_feat)
+        #feat = self.bottleneck(global_feat)
 
         if self.training:
             if self.ID_LOSS_TYPE in ('arcface', 'cosface', 'amsoftmax', 'circle'):
@@ -367,8 +367,9 @@ class build_transformer_local(nn.Module):
                 return torch.cat(
                     [feat, local_feat_1_bn / 4, local_feat_2_bn / 4, local_feat_3_bn / 4, local_feat_4_bn / 4], dim=1)
             else:
-                return torch.cat(
-                    [global_feat, local_feat_1 / 4, local_feat_2 / 4, local_feat_3 / 4, local_feat_4 / 4], dim=1)
+                # return torch.cat(
+                #     [global_feat, local_feat_1 / 4, local_feat_2 / 4, local_feat_3 / 4, local_feat_4 / 4], dim=1)
+                return  x
 
     def load_param(self, trained_path):
         param_dict = torch.load(trained_path)

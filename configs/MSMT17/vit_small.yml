@@ -1,6 +1,6 @@
 MODEL:
   PRETRAIN_CHOICE: 'imagenet'
-  PRETRAIN_PATH: '/home/heshuting/.cache/torch/checkpoints/vit_small_p16_224-15ec54c9.pth'
+  PRETRAIN_PATH: '/home/ma1/.cache/torch/checkpoints/vit_small_p16_224-15ec54c9.pth'
   METRIC_LOSS_TYPE: 'triplet'
   IF_LABELSMOOTH: 'off'
   IF_WITH_CENTER: 'no'

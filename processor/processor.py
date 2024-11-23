@@ -8,6 +8,14 @@ from utils.metrics import R1_mAP_eval
 from torch.cuda import amp
 import torch.distributed as dist
 
+
+import os
+import shutil
+import torch
+import matplotlib.pyplot as plt
+import cv2
+import numpy as np
+
 def do_train(cfg,
              model,
              center_criterion,
@@ -154,6 +162,101 @@ def do_inference(cfg,
     model.eval()
     img_path_list = []
 
+    visual = False
+    if visual:
+        # 定义根目录
+        data_root = "/home/ma1/work/data/market1501/query/"
+        visorg_dir = "/home/ma1/work/TransReID/visorg"
+        visattention_dir = "/home/ma1/work/TransReID/visattention_norerange_nojpm3"
+
+        # 创建目标文件夹
+        os.makedirs(visorg_dir, exist_ok=True)
+        os.makedirs(visattention_dir, exist_ok=True)
+
+        from scipy.ndimage import gaussian_filter
+
+        # 遍历数据并处理
+        for n_iter, (img, pid, camid, camids, target_view, imgpath) in enumerate(val_loader):
+            with torch.no_grad():
+                # 将输入数据迁移到设备
+                img = img.to(device)
+                camids = camids.to(device)
+                target_view = target_view.to(device)
+
+                # 计算特征
+                feat = model(img, cam_label=camids, view_label=target_view)
+
+                for i in range(img.shape[0]):
+                    image_path = os.path.join(data_root, imgpath[i])
+                    feature_tensor = feat[i].cpu()
+
+                    # 在 768 维度上取平均，得到 (210,)
+                    feature_avg = feature_tensor.mean(dim=1)
+
+                    # 归一化特征
+                    feature_avg = (feature_avg - feature_avg.min()) / (feature_avg.max() - feature_avg.min())
+
+                    # 重塑为 (21, 10)
+                    #feature_map = feature_avg.view(21, 10)
+                    feature_map = feature_avg.view(16, 8)
+                    # 将 feature_map 插值到 (21, 10) 以保持一致
+                    feature_map = torch.nn.functional.interpolate(
+                        feature_map.unsqueeze(0).unsqueeze(0), size=(21, 10), mode='bilinear', align_corners=False
+                    )[0, 0]
+
+                    # **高分辨率插值**
+                    # 首先插值到更高分辨率
+                    # high_res_map = torch.nn.functional.interpolate(
+                    #     feature_map.unsqueeze(0).unsqueeze(0), size=(84, 40), mode='bilinear', align_corners=False
+                    # )[0, 0].cpu().numpy()
+
+                    # 插值到更高分辨率 (84, 40)
+                    high_res_map = torch.nn.functional.interpolate(
+                        feature_map.unsqueeze(0).unsqueeze(0), size=(84, 40), mode='bilinear', align_corners=False
+                    )[0, 0]
+
+                    high_res_map = high_res_map.cpu().numpy()
+
+                    # 进一步插值到 (256, 128)
+                    attention_map_upsampled = torch.nn.functional.interpolate(
+                        torch.tensor(high_res_map).unsqueeze(0).unsqueeze(0), size=(256, 128), mode='bilinear',
+                        align_corners=False
+                    )[0, 0].numpy()
+
+                    # **增加高斯滤波强度**
+                    # 使用更大的 sigma 值
+                    attention_map_upsampled = gaussian_filter(attention_map_upsampled, sigma=4)
+
+                    # **局部加权平滑**
+                    # 创建卷积核
+                    kernel_size = 5
+                    kernel = np.ones((kernel_size, kernel_size), np.float32) / (kernel_size ** 2)
+                    attention_map_upsampled = cv2.filter2D(attention_map_upsampled, -1, kernel)
+
+                    # 归一化注意力图
+                    attention_map_upsampled = (attention_map_upsampled - attention_map_upsampled.min()) / (
+                            attention_map_upsampled.max() - attention_map_upsampled.min()
+                    )
+
+                    # **叠加到原图**
+                    original_image = cv2.imread(image_path)
+                    original_image = cv2.resize(original_image, (128, 256))
+                    original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
+
+                    # 转换注意力图为伪彩色
+                    heatmap = cv2.applyColorMap((attention_map_upsampled * 255).astype(np.uint8), cv2.COLORMAP_JET)
+                    heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
+
+                    # 混合原图和热力图
+                    combined = cv2.addWeighted(original_image, 0.6, heatmap, 0.4, 0)
+
+                    # **保存注意力图**
+                    attention_path = os.path.join(visattention_dir,
+                                                  os.path.splitext(os.path.basename(image_path))[0] + ".png")
+                    plt.imsave(attention_path, combined)
+
+        print("所有图片和注意力图处理完成！")
+
     for n_iter, (img, pid, camid, camids, target_view, imgpath) in enumerate(val_loader):
         with torch.no_grad():
             img = img.to(device)
@@ -162,6 +265,11 @@ def do_inference(cfg,
             feat = model(img, cam_label=camids, view_label=target_view)
             evaluator.update((feat, pid, camid))
             img_path_list.extend(imgpath)
+
+
+
+
+
 
     cmc, mAP, _, _, _, _, _ = evaluator.compute()
     logger.info("Validation Results ")

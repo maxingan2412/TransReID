@@ -27,7 +27,9 @@ from itertools import repeat
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch._six import container_abcs
+# from torch._six import container_abcs
+import collections.abc as container_abcs
+
 
 
 # From PyTorch internals
@@ -401,7 +403,8 @@ class TransReID(nn.Module):
 
             x = self.norm(x)
 
-            return x[:, 0]
+            #return x[:, 0]
+            return x[:, 1:]
 
     def forward(self, x, cam_label=None, view_label=None):
         x = self.forward_features(x, cam_label, view_label)
