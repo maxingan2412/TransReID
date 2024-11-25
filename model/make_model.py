@@ -321,7 +321,11 @@ class build_transformer_local(nn.Module):
         if self.rearrange:
             x = shuffle_unit(features, self.shift_num, self.shuffle_groups)
         else:
-            x = features[:, 1:]
+            visual = True
+            if visual:
+                x = features
+            else:
+                x = features[:, 1:]
         # lf_1
         b1_local_feat = x[:, :patch_length]
         b1_local_feat = self.b2(torch.cat((token, b1_local_feat), dim=1))
@@ -367,9 +371,13 @@ class build_transformer_local(nn.Module):
                 return torch.cat(
                     [feat, local_feat_1_bn / 4, local_feat_2_bn / 4, local_feat_3_bn / 4, local_feat_4_bn / 4], dim=1)
             else:
-                # return torch.cat(
-                #     [global_feat, local_feat_1 / 4, local_feat_2 / 4, local_feat_3 / 4, local_feat_4 / 4], dim=1)
-                return  x
+                visual = True
+                if visual:
+                    return x
+                else:
+                    return torch.cat(
+                        [global_feat, local_feat_1 / 4, local_feat_2 / 4, local_feat_3 / 4, local_feat_4 / 4], dim=1)
+                # return  x
 
     def load_param(self, trained_path):
         param_dict = torch.load(trained_path)

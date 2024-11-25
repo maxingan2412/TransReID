@@ -300,6 +300,7 @@ class TransReID(nn.Module):
         self.num_classes = num_classes
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
         self.local_feature = local_feature
+        self.local_feature = True
         if hybrid_backbone is not None:
             self.patch_embed = HybridEmbed(
                 hybrid_backbone, img_size=img_size, in_chans=in_chans, embed_dim=embed_dim)
@@ -395,7 +396,12 @@ class TransReID(nn.Module):
         if self.local_feature:
             for blk in self.blocks[:-1]:
                 x = blk(x)
-            return x
+            visual = True
+            if visual:
+                return x[:, 1:]
+            else:
+
+                return x
 
         else:
             for blk in self.blocks:
@@ -403,8 +409,14 @@ class TransReID(nn.Module):
 
             x = self.norm(x)
 
+            visual = True
+            if visual:
+                return x[:, 1:]
+            else:
+                return x[:, 0]
+
             #return x[:, 0]
-            return x[:, 1:]
+            # return x[:, 1:]
 
     def forward(self, x, cam_label=None, view_label=None):
         x = self.forward_features(x, cam_label, view_label)

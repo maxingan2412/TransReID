@@ -15,6 +15,7 @@ import torch
 import matplotlib.pyplot as plt
 import cv2
 import numpy as np
+import torch.nn.functional as F
 
 def do_train(cfg,
              model,
@@ -162,12 +163,12 @@ def do_inference(cfg,
     model.eval()
     img_path_list = []
 
-    visual = False
+    visual = True
     if visual:
         # 定义根目录
         data_root = "/home/ma1/work/data/market1501/query/"
         visorg_dir = "/home/ma1/work/TransReID/visorg"
-        visattention_dir = "/home/ma1/work/TransReID/visattention_norerange_nojpm3"
+        visattention_dir = "/home/ma1/work/TransReID/jpm1125pinghua"
 
         # 创建目标文件夹
         os.makedirs(visorg_dir, exist_ok=True)
@@ -175,7 +176,6 @@ def do_inference(cfg,
 
         from scipy.ndimage import gaussian_filter
 
-        # 遍历数据并处理
         for n_iter, (img, pid, camid, camids, target_view, imgpath) in enumerate(val_loader):
             with torch.no_grad():
                 # 将输入数据迁移到设备
@@ -191,47 +191,39 @@ def do_inference(cfg,
                     feature_tensor = feat[i].cpu()
 
                     # 在 768 维度上取平均，得到 (210,)
-                    feature_avg = feature_tensor.mean(dim=1)
+                    #feature_avg = feature_tensor.mean(dim=1)
+                    # 计算权重
+                    # weights = torch.softmax(feature_tensor, dim=1)
+                    #
+                    # # 加权平均
+                    # feature_avg = (feature_tensor * weights).sum(dim=1)
+                    # 使用自适应平均池化
+                    feature_avg = F.adaptive_avg_pool1d(feature_tensor.unsqueeze(1), output_size=1).squeeze(1)
 
-                    # 归一化特征
+                    # 对输入特征进行归一化处理
                     feature_avg = (feature_avg - feature_avg.min()) / (feature_avg.max() - feature_avg.min())
 
-                    # 重塑为 (21, 10)
-                    #feature_map = feature_avg.view(21, 10)
-                    feature_map = feature_avg.view(16, 8)
-                    # 将 feature_map 插值到 (21, 10) 以保持一致
-                    feature_map = torch.nn.functional.interpolate(
-                        feature_map.unsqueeze(0).unsqueeze(0), size=(21, 10), mode='bilinear', align_corners=False
-                    )[0, 0]
+                    # 根据特征的形状选择重塑方式
+                    if feature_avg.shape[0] == 210:
+                        # 直接重塑为 (21, 10)
+                        feature_map = feature_avg.view(21, 10)
+                    elif feature_avg.shape[0] == 128:
+                        # 重塑为 (16, 8)
+                        feature_map = feature_avg.view(16, 8)
 
-                    # **高分辨率插值**
-                    # 首先插值到更高分辨率
-                    # high_res_map = torch.nn.functional.interpolate(
-                    #     feature_map.unsqueeze(0).unsqueeze(0), size=(84, 40), mode='bilinear', align_corners=False
-                    # )[0, 0].cpu().numpy()
+                        # 插值到 (21, 10)
+                        feature_map = torch.nn.functional.interpolate(
+                            feature_map.unsqueeze(0).unsqueeze(0), size=(21, 10), mode='bilinear', align_corners=False
+                        )[0, 0]
+                    else:
+                        raise ValueError(f"Unexpected feature_avg shape: {feature_avg.shape[0]}")
 
-                    # 插值到更高分辨率 (84, 40)
-                    high_res_map = torch.nn.functional.interpolate(
-                        feature_map.unsqueeze(0).unsqueeze(0), size=(84, 40), mode='bilinear', align_corners=False
-                    )[0, 0]
-
-                    high_res_map = high_res_map.cpu().numpy()
-
-                    # 进一步插值到 (256, 128)
+                    # 插值到最终形状 (256, 128)
                     attention_map_upsampled = torch.nn.functional.interpolate(
-                        torch.tensor(high_res_map).unsqueeze(0).unsqueeze(0), size=(256, 128), mode='bilinear',
-                        align_corners=False
-                    )[0, 0].numpy()
+                        feature_map.unsqueeze(0).unsqueeze(0), size=(256, 128), mode='bilinear', align_corners=False
+                    )[0, 0]
 
-                    # **增加高斯滤波强度**
-                    # 使用更大的 sigma 值
-                    attention_map_upsampled = gaussian_filter(attention_map_upsampled, sigma=4)
-
-                    # **局部加权平滑**
-                    # 创建卷积核
-                    kernel_size = 5
-                    kernel = np.ones((kernel_size, kernel_size), np.float32) / (kernel_size ** 2)
-                    attention_map_upsampled = cv2.filter2D(attention_map_upsampled, -1, kernel)
+                    attention_map_upsampled = F.avg_pool2d(attention_map_upsampled.unsqueeze(0).unsqueeze(0), kernel_size=5, stride=1, padding=2)[0, 0]
 
                     # 归一化注意力图
                     attention_map_upsampled = (attention_map_upsampled - attention_map_upsampled.min()) / (
@@ -244,7 +236,8 @@ def do_inference(cfg,
                     original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
 
                     # 转换注意力图为伪彩色
-                    heatmap = cv2.applyColorMap((attention_map_upsampled * 255).astype(np.uint8), cv2.COLORMAP_JET)
+                    attention_map_numpy = attention_map_upsampled.cpu().numpy()  # 转换为 NumPy 数组
+                    heatmap = cv2.applyColorMap((attention_map_numpy * 255).astype(np.uint8), cv2.COLORMAP_JET)
                     heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
 
                     # 混合原图和热力图
