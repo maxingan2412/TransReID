@@ -1,6 +1,6 @@
 MODEL:
   PRETRAIN_CHOICE: 'imagenet'
-  PRETRAIN_PATH: '/home/heshuting/.cache/torch/checkpoints/jx_vit_base_p16_224-80ecf9dd.pth'
+  PRETRAIN_PATH: '/home/ma1/.cache/torch/checkpoints/jx_vit_base_p16_224-80ecf9dd.pth'
   METRIC_LOSS_TYPE: 'triplet'
   IF_LABELSMOOTH: 'off'
   IF_WITH_CENTER: 'no'
@@ -25,7 +25,7 @@ INPUT:
 
 DATASETS:
   NAMES: ('msmt17')
-  ROOT_DIR: ('../../data')
+  ROOT_DIR: ('../data')
 
 DATALOADER:
   SAMPLER: 'softmax_triplet'
